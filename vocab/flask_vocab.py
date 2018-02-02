@@ -4,47 +4,45 @@ Flask web site with vocabulary matching game
 from a scrambled string)
 """
 
+# docker build -t myflask .
+# docker run -p 5000:5000 myflask
+# http://127.0.0.1:5000
+
 import flask
 import logging
 
 # Our own modules
 from letterbag import LetterBag
-from vocab import Vocab
-from jumble import jumbled
+from vocab import Vocab # reads in a file of words (given to letter bag)
+from jumble import jumbled # uses letterbag to create random string for user to find words
 import config
 
 ###
 # Globals
 ###
-app = flask.Flask(__name__)
+app = flask.Flask(__name__) # creates flask object 
 
 CONFIG = config.configuration()
 app.secret_key = CONFIG.SECRET_KEY  # Should allow using session variables
 
-#
 # One shared 'Vocab' object, read-only after initialization,
 # shared by all threads and instances.  Otherwise we would have to
 # store it in the browser and transmit it on each request/response cycle,
 # or else read it from the file on each request/responce cycle,
 # neither of which would be suitable for responding keystroke by keystroke.
 
-WORDS = Vocab(CONFIG.VOCAB)
-
-###
-# Pages
-###
-
+WORDS = Vocab(CONFIG.VOCAB) # refer to vocab.py class
 
 @app.route("/")
 @app.route("/index")
-def index():
+def index(): # session refers to variables
     """The main page of the application"""
-    flask.g.vocab = WORDS.as_list()
+    flask.g.vocab = WORDS.as_list() # method returns a list of words
     flask.session["target_count"] = min(
         len(flask.g.vocab), CONFIG.SUCCESS_AT_COUNT)
     flask.session["jumble"] = jumbled(
-        flask.g.vocab, flask.session["target_count"])
-    flask.session["matches"] = []
+        flask.g.vocab, flask.session["target_count"]) # creates a jumble of letters from word list
+    flask.session["matches"] = [] # this is where any word matches made from jumble will go
     app.logger.debug("Session variables have been set")
     assert flask.session["matches"] == []
     assert flask.session["target_count"] > 0
@@ -64,7 +62,7 @@ def keep_going():
 
 @app.route("/success")
 def success():
-    return flask.render_template('success.html')
+    return flask.render_template('success.html') # redirects to a new page with link to start over
 
 #######################
 # Form handler.
@@ -74,7 +72,7 @@ def success():
 #######################
 
 
-@app.route("/_check", methods=["POST"])
+@app.route("/_check")
 def check():
     """
     User has submitted the form with a word ('attempt')
@@ -87,35 +85,47 @@ def check():
     app.logger.debug("Entering check")
 
     # The data we need, from form and from cookie
-    text = flask.request.form["attempt"]
+    text = flask.request.args.get("text", type=str) #text = flask.request.form["attempt"]
     jumble = flask.session["jumble"]
     matches = flask.session.get("matches", [])  # Default to empty list
 
-    # Is it good?
-    in_jumble = LetterBag(jumble).contains(text)
-    matched = WORDS.has(text)
+    in_jumble = LetterBag(jumble).contains(text) # if jumble contains word
+    matched = WORDS.has(text) # if in word list
 
-    # Respond appropriately
-    if matched and in_jumble and not (text in matches):
-        # Cool, they found a new word
-        matches.append(text)
-        flask.session["matches"] = matches
-    elif text in matches:
-        flask.flash("You already found {}".format(text))
-    elif not matched:
-        flask.flash("{} isn't in the list of words".format(text))
-    elif not in_jumble:
-        flask.flash(
-            '"{}" can\'t be made from the letters {}'.format(text, jumble))
+    if matched and in_jumble and not (text in matches): # found new word
+        matches.append(text) # add word to matches list
+        text = ' '.join(matches)
+        flask.session["matches"] = matches # update session
+        result = {"message":"match found", "response": text} # or maybe do flask.session["matches"]
+        app.logger.debug("Matches are " + text)
+
+    elif text in matches: # if already found
+        text = "You already found {}".format(text)
+        result = {"message":"already found", "response": text}
+        app.logger.debug("Already found " + text)
+
+    elif not matched: # not in word list
+        text = "{} isn't in the list of words".format(text)
+        result = {"message":"not in list", "response": text}
+        app.logger.debug("Not in list " + text)
+
+    elif not in_jumble: # cant be made from jumble
+        text = '"{}" can\'t be made from the letters {}'.format(text, jumble)
+        result = {"message":"cant be made", "response": text}
+        app.logger.debug("Cannot " + text)
+
     else:
         app.logger.debug("This case shouldn't happen!")
         assert False  # Raises AssertionError
 
-    # Choose page:  Solved enough, or keep going?
     if len(matches) >= flask.session["target_count"]:
-       return flask.redirect(flask.url_for("success"))
-    else:
-       return flask.redirect(flask.url_for("keep_going"))
+       success = "/success"
+       result = {"message":"success", "response": success}
+
+    app.logger.debug("Result is {}".format(result))
+    return flask.jsonify(result=result)
+    # this sends what ever was calculated to be rsval to html where javascript 
+    # will return the correct value based off of what the value contains?
 
 ###############
 # AJAX request handlers

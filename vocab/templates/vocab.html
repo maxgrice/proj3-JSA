@@ -84,32 +84,69 @@
     <label for="attempt">Word:</label>
     <input id="attempt" name="attempt" type="text" width="15"
       autocomplete="off"  autofocus />
-    <input type="submit" name="try" />
   </form>
 </div></div>
 
 <br />
 
-{% if session.matches|length is not equalto 0  %}
 <h2>You found </h2>
-<p id="results">
-  {% for match in session.matches %}
-  {{ match }} 
-  {% endfor %}
+<p id="results">{{ results }}
 </p>
-{% endif %}
 
-
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
     <!-- Mismatch, already found, etc. "flashed" from Python -->
-    {% for message in messages %}
       <p class="message">{{ message }}</p>
-    {% endfor %}
-  {% endif %}
-{% endwith %}
 
+<script>
 
+// Suppress normal form submission
+$("#entry").submit( function(event) {
+   event.preventDefault();
+  });
+
+// On each keystroke, ask the server whether the current 
+// word is long enough. 
+//
+// We use 'keyup' because the form value
+// is updated before that event is generated.
+// keypress is triggered before the input field has been
+// updated.  Be aware that we'll see non-character keys like
+// shift and control, so make sure whatever you do with the
+// event does not depend on it being a letter. 
+//
+$("#attempt").keyup(function(event) {
+   var txt = $("#attempt").val();  // Current content of the input field
+   var keycode = event.which;      // They key that just went up
+   var letter = String.fromCharCode(keycode);
+
+   // That letter might not be a letter ... it could be the
+   // the backspace key, or even the shift key, because 'keyup'
+   // catches all kinds of keys.  (Also, the difference between
+   // upper and lower case comes from state of shift key + key code,
+   // so ignoring the shift key we get only the upper case letters.
+
+   //if (! "ABCDEFGHIJKLMNOPQRSTUVWXYZ".includes(letter)) { return }
+
+   $.getJSON( "/_check", { text: txt },
+              function(data) {
+	            //var matches = []
+                command = data.result.message;
+                action = data.result.response;
+                console.log("Command is: " + command)
+                cases = ["match found", "already found", "not in list",     "cant be made", "success"]
+                if ((command==cases[1]) || (command==cases[2]) || (command==cases[3])) {
+	               $(".message").html(action);
+	            } else {
+		            if(command==cases[4]) {
+			            location.href = action;
+	                } else {
+		                $("#attempt").val("");
+	                    $("#results").html(action);
+		            }
+		        }
+              } 
+           );
+   });
+</script>
 
  </div> <!-- container -->
 </body> </html>
